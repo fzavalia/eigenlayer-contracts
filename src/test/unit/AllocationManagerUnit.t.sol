@@ -62,7 +62,7 @@ contract AllocationManagerUnitTests is EigenLayerUnitTestSetup, IAllocationManag
         strategyMock = StrategyBase(
             address(
                 new TransparentUpgradeableProxy(
-                    address(new StrategyBase(IStrategyManager(address(strategyManagerMock)), pauserRegistry)),
+                    address(new StrategyBase(IStrategyManager(address(strategyManagerMock)), pauserRegistry, "v9.9.9")),
                     address(eigenLayerProxyAdmin),
                     abi.encodeWithSelector(StrategyBase.initialize.selector, tokenMock)
                 )
@@ -96,7 +96,8 @@ contract AllocationManagerUnitTests is EigenLayerUnitTestSetup, IAllocationManag
                             _pauserRegistry,
                             IPermissionController(address(permissionController)),
                             DEALLOCATION_DELAY,
-                            ALLOCATION_CONFIGURATION_DELAY
+                            ALLOCATION_CONFIGURATION_DELAY,
+                            "v9.9.9"
                         )
                     ),
                     address(eigenLayerProxyAdmin),

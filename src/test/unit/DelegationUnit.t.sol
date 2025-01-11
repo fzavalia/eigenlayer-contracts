@@ -63,7 +63,7 @@ contract DelegationManagerUnitTests is EigenLayerUnitTestSetup, IDelegationManag
     address defaultOperator2 = address(0x123);
     address defaultAVS = address(this);
     string emptyStringForMetadataURI;
-    ISignatureUtils.SignatureWithExpiry emptyApproverSignatureAndExpiry;
+    ISignatureUtilsMixinTypes.SignatureWithExpiry emptyApproverSignatureAndExpiry;
     bytes32 emptySalt;
     // Helper to use in storage
     DepositScalingFactor dsf;
@@ -110,7 +110,7 @@ contract DelegationManagerUnitTests is EigenLayerUnitTestSetup, IDelegationManag
 
         // Deploy mock token and strategy
         tokenMock = new ERC20PresetFixedSupply("Mock Token", "MOCK", tokenMockInitialSupply, address(this));
-        strategyImplementation = new StrategyBase(IStrategyManager(address(strategyManagerMock)), pauserRegistry);
+        strategyImplementation = new StrategyBase(IStrategyManager(address(strategyManagerMock)), pauserRegistry, "v9.9.9");
         strategyMock = StrategyBase(
             address(
                 new TransparentUpgradeableProxy(
@@ -206,7 +206,7 @@ contract DelegationManagerUnitTests is EigenLayerUnitTestSetup, IDelegationManag
         address operator,
         bytes32 salt,
         uint256 expiry
-    ) internal view returns (ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry) {
+    ) internal view returns (ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry) {
         approverSignatureAndExpiry.expiry = expiry;
         {
             bytes32 digestHash = delegationManager.calculateDelegationApprovalDigestHash(
@@ -224,14 +224,14 @@ contract DelegationManagerUnitTests is EigenLayerUnitTestSetup, IDelegationManag
 
     // @notice Assumes operator does not have a delegation approver & staker != approver
     function _delegateToOperatorWhoAcceptsAllStakers(address staker, address operator) internal {
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         cheats.prank(staker);
         delegationManager.delegateTo(operator, approverSignatureAndExpiry, emptySalt);
     }
 
     function _delegateToOperatorWhoRequiresSig(address staker, address operator, bytes32 salt) internal {
         uint256 expiry = type(uint256).max;
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             operator,
@@ -1361,6 +1361,19 @@ contract DelegationManagerUnitTests_Initialization_Setters is DelegationManagerU
         );
         assertEq(delegationManager.owner(), address(this), "constructor / initializer incorrect, owner set wrong");
         assertEq(delegationManager.paused(), 0, "constructor / initializer incorrect, paused status set wrong");
+
+        bytes memory v = bytes(delegationManager.version());
+        bytes32 expectedDomainSeparator = keccak256(
+                abi.encode(
+                    EIP712_DOMAIN_TYPEHASH, 
+                    keccak256(bytes("EigenLayer")),
+                    keccak256(bytes.concat(v[0], v[1])),
+                    block.chainid, 
+                    address(delegationManager)
+                )
+            );
+        
+        assertEq(delegationManager.domainSeparator(), expectedDomainSeparator, "sanity check");
     }
 
     /// @notice Verifies that the DelegationManager cannot be iniitalized multiple times
@@ -1478,7 +1491,7 @@ contract DelegationManagerUnitTests_RegisterModifyOperator is DelegationManagerU
 
         // delegate from the `staker` to the operator
         cheats.startPrank(staker);
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         delegationManager.delegateTo(defaultOperator, approverSignatureAndExpiry, emptySalt);
 
         // expect revert if attempt to register as operator
@@ -1657,7 +1670,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         cheats.prank(pauser);
         delegationManager.pause(2 ** PAUSED_NEW_DELEGATION);
 
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         cheats.prank(defaultStaker);
         cheats.expectRevert(IPausable.CurrentlyPaused.selector);
         delegationManager.delegateTo(defaultOperator, approverSignatureAndExpiry, emptySalt);
@@ -1668,7 +1681,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
      */
     function testFuzz_Revert_WhenDelegateWhileDelegated(
         Randomness r,
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry
     ) public rand(r) {
         address staker = r.Address();
         address operator = r.Address();
@@ -1693,7 +1706,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         // try to delegate and check that the call reverts
         cheats.prank(staker);
         cheats.expectRevert(OperatorNotRegistered.selector);
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         delegationManager.delegateTo(operator, approverSignatureAndExpiry, emptySalt);
     }
 
@@ -1711,7 +1724,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
      */
     function testFuzz_OperatorWhoAcceptsAllStakers_StrategyManagerShares(
         Randomness r,
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry
     ) public rand(r) {
         address staker = r.Address();
         bytes32 salt = r.Bytes32();
@@ -1780,7 +1793,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
      */
     function testFuzz_OperatorWhoAcceptsAllStakers_beaconChainStrategyShares(
         Randomness r,
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry
     ) public rand(r) {
         address staker = r.Address();
         bytes32 salt = r.Bytes32();
@@ -1899,7 +1912,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
      */
     function testFuzz_Revert_OperatorWhoAcceptsAllStakers_AlreadySlashed100Percent_BeaconChainStrategyShares(
         Randomness r,
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry
     ) public rand(r) {
         address staker = r.Address();
         bytes32 salt = r.Bytes32();
@@ -2174,7 +2187,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
      */
     function testFuzz_OperatorWhoAcceptsAllStakers_BeaconChainAndStrategyManagerShares(
         Randomness r,
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry
     ) public rand(r) {
         address staker = r.Address();
         bytes32 salt = r.Bytes32();
@@ -2363,7 +2376,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
      */
     function testFuzz_OperatorWhoAcceptsAllStakers_ZeroDelegatableShares(
         Randomness r,
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry
     ) public rand(r) {
         address staker = r.Address();
         bytes32 salt = r.Bytes32();
@@ -2413,7 +2426,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         _registerOperatorWithDelegationApprover(defaultOperator);
 
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2423,7 +2436,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
 
         // delegate from the `staker` to the operator
         cheats.startPrank(staker);
-        cheats.expectRevert(ISignatureUtils.SignatureExpired.selector);
+        cheats.expectRevert(ISignatureUtilsMixinErrors.SignatureExpired.selector);
         delegationManager.delegateTo(defaultOperator, approverSignatureAndExpiry, salt);
         cheats.stopPrank();
     }
@@ -2450,7 +2463,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2487,7 +2500,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         _registerOperatorWithDelegationApprover(defaultOperator);
 
         // calculate the signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         approverSignatureAndExpiry.expiry = expiry;
         {
             bytes32 digestHash = delegationManager.calculateDelegationApprovalDigestHash(
@@ -2505,7 +2518,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
 
         // try to delegate from the `staker` to the operator, and check reversion
         cheats.startPrank(staker);
-        cheats.expectRevert(ISignatureUtils.InvalidSignature.selector);
+        cheats.expectRevert(ISignatureUtilsMixinErrors.InvalidSignature.selector);
         delegationManager.delegateTo(defaultOperator, approverSignatureAndExpiry, emptySalt);
         cheats.stopPrank();
     }
@@ -2535,7 +2548,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2604,7 +2617,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2697,7 +2710,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2795,7 +2808,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2899,12 +2912,12 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         _registerOperatorWithDelegationApprover(defaultOperator);
 
         // create the signature struct
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         approverSignatureAndExpiry.expiry = expiry;
 
         // try to delegate from the `staker` to the operator, and check reversion
         cheats.startPrank(staker);
-        cheats.expectRevert(ISignatureUtils.SignatureExpired.selector);
+        cheats.expectRevert(ISignatureUtilsMixinErrors.SignatureExpired.selector);
         delegationManager.delegateTo(defaultOperator, approverSignatureAndExpiry, emptySalt);
         cheats.stopPrank();
     }
@@ -2926,7 +2939,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         _registerOperatorWith1271DelegationApprover(defaultOperator);
 
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -2961,7 +2974,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         _registerOperator(defaultOperator, address(wallet), emptyStringForMetadataURI);
 
         // create the signature struct
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry;
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry;
         approverSignatureAndExpiry.expiry = expiry;
 
         // try to delegate from the `staker` to the operator, and check reversion
@@ -2990,7 +3003,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
 
         // calculate the delegationSigner's but this is not the correct signature from the wallet contract
         // since the wallet owner is address(1)
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -3001,7 +3014,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
         // try to delegate from the `staker` to the operator, and check reversion
         cheats.startPrank(staker);
         // Signature should fail as the wallet will not return EIP1271_MAGICVALUE
-        cheats.expectRevert(ISignatureUtils.InvalidSignature.selector);
+        cheats.expectRevert(ISignatureUtilsMixinErrors.InvalidSignature.selector);
         delegationManager.delegateTo(defaultOperator, approverSignatureAndExpiry, emptySalt);
         cheats.stopPrank();
     }
@@ -3032,7 +3045,7 @@ contract DelegationManagerUnitTests_delegateTo is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             defaultOperator,
@@ -4733,7 +4746,7 @@ contract DelegationManagerUnitTests_redelegate is DelegationManagerUnitTests {
         _registerOperatorWithDelegationApprover(newOperator);
 
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             newOperator,
@@ -4743,7 +4756,7 @@ contract DelegationManagerUnitTests_redelegate is DelegationManagerUnitTests {
 
         // delegate from the `staker` to the operator
         cheats.startPrank(staker);
-        cheats.expectRevert(ISignatureUtils.SignatureExpired.selector);
+        cheats.expectRevert(ISignatureUtilsMixinErrors.SignatureExpired.selector);
         delegationManager.redelegate(newOperator, approverSignatureAndExpiry, salt);
         cheats.stopPrank();
     }
@@ -4768,7 +4781,7 @@ contract DelegationManagerUnitTests_redelegate is DelegationManagerUnitTests {
             "salt somehow spent too early?"
         );
         // calculate the delegationSigner's signature
-        ISignatureUtils.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
+        ISignatureUtilsMixinTypes.SignatureWithExpiry memory approverSignatureAndExpiry = _getApproverSignature(
             delegationSignerPrivateKey,
             staker,
             newOperator,
